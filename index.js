@@ -1,85 +1,91 @@
-
-// Your code here!
 const form = document.getElementById("weather-form");
-const stateInput = document.getElementById("state-input");
+const input = document.getElementById("state-input");
+const submitBtn = document.getElementById("submit-btn");
 const alertsDisplay = document.getElementById("alerts-display");
-const errorMessage = document.getElementById("error-message");
+const errorDiv = document.getElementById("error-message");
+const loading = document.getElementById("loading");
 
-async function fetchWeatherAlerts(state) {
-  try {
-    const response = await fetch(
-      `https://api.weather.gov/alerts/active?area=${state}`
-    );
+// Step 1: fetch alerts for a state
+function fetchWeatherAlerts(state) {
+  const STATE_ABBR = state.trim();
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Step 1: Log the data for testing.
-    console.log(data);
-
-    // Step 2: Display the alerts.
-    displayAlerts(data);
-
-  } catch (errorObject) {
-    console.log("Error fetching weather alerts:", errorObject.message);
-
-    alertsDisplay.replaceChildren();
-    errorMessage.textContent = `Unable to fetch weather alerts: ${errorObject.message}`;
+  // Input validation: two capital letters
+  if (!STATE_ABBR) {
+    return Promise.reject(new Error("Please enter a state abbreviation."));
   }
+  if (!/^[A-Z]{2}$/.test(STATE_ABBR)) {
+    return Promise.reject(
+      new Error("State must be two capital letters, like TX.")
+    );
+  }
+
+  return fetch(`https://api.weather.gov/alerts/active?area=${STATE_ABBR}`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(
+          `Could not get alerts for "${STATE_ABBR}" (status ${response.status}). Check the state code.`
+        );
+      }
+      return response.json();
+    })
+    .then((data) => {
+      console.log(data); // for testing
+      return data;
+    });
 }
 
+// Step 2: show alerts on the page
 function displayAlerts(data) {
-  // Remove previous alerts and errors.
-  alertsDisplay.replaceChildren();
-  errorMessage.textContent = "";
+  alertsDisplay.innerHTML = ""; // remove previous data
 
-  const alerts = data.features || [];
-
-  // Display the summary.
-  const summary = document.createElement("h2");
-  summary.textContent = `${data.title}: ${alerts.length}`;
+  const summary = document.createElement("p");
+  summary.className = "summary";
+  summary.textContent = `${data.title}: ${data.features.length}`;
   alertsDisplay.appendChild(summary);
 
-  if (alerts.length === 0) {
-    const message = document.createElement("p");
-    message.textContent = "There are currently no active weather alerts.";
-    alertsDisplay.appendChild(message);
-    return;
-  }
-
-  // Display each alert headline as a list item.
   const list = document.createElement("ul");
-
-  alerts.forEach((alert) => {
+  data.features.forEach((alert) => {
     const item = document.createElement("li");
-    item.textContent =
-      alert.properties?.headline || "Headline unavailable";
+    item.textContent = alert.properties.headline;
     list.appendChild(item);
   });
-
   alertsDisplay.appendChild(list);
 }
 
+function showError(message) {
+  errorDiv.textContent = message;
+  errorDiv.classList.remove("hidden");
+}
+
+function clearError() {
+  errorDiv.textContent = "";
+  errorDiv.classList.add("hidden");
+}
+
+function setLoading(isLoading) {
+  loading.classList.toggle("hidden", !isLoading);
+  submitBtn.disabled = isLoading;
+}
+
 form.addEventListener("submit", (event) => {
-  event.preventDefault();
+  event.preventDefault(); // stop the page from reloading
+  const state = input.value;
+  input.value = ""; // clear the input field on every fetch
 
-  const state = stateInput.value.trim().toUpperCase();
-
-  // Clear old results before processing a new request.
-  alertsDisplay.replaceChildren();
-  errorMessage.textContent = "";
-
-  // Validate the input.
-  if (!/^[A-Z]{2,20}$/.test(state)) {
-    errorMessage.textContent =
-      "Please enter a valid two-letter US state abbreviation.";
-    return;
-  }
-
-  // Clear the input field and fetch fresh data.
-  stateInput.value = "";
-  fetchWeatherAlerts(state);
+  setLoading(true);
+  fetchWeatherAlerts(state)
+    .then((data) => {
+      clearError(); // hide and clear error after a successful request
+      displayAlerts(data);
+    })
+    .catch((errorObject) => {
+      console.log(errorObject.message);
+      alertsDisplay.innerHTML = "";
+      showError(
+        errorObject instanceof TypeError
+          ? "Network error. Please check your connection and try again."
+          : errorObject.message
+      );
+    })
+    .finally(() => setLoading(false));
 });
